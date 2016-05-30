@@ -1,0 +1,228 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description"              : "AWS CloudFormation Serverless EBS Maintenance on Singapore Region",
+    "Parameters"               : {
+        "SNSTopicName" : {
+            "Type" : "String",
+            "Description" : "SNS Topic to Send Alerts to",
+            "Default"     : "sns-topic-name"
+        },
+	"S3BucketName" : {
+	    "Type" : "String",
+            "Description" : "S3 Bucket Name (S3 Bucket where your Lambda Scripts are located)",
+            "Default"     : "s3-bucket-name"
+    }
+},
+    "Resources"                : {
+	"SNSTopicNameCreate" : {
+		"Type" : "AWS::SNS::Topic",
+		"Properties" : {
+		"TopicName" : {
+			"Ref" : "SNSTopicName"
+			}
+  		}
+	},
+        "EbsBackupSingaporeRole" : {
+            "Type" : "AWS::IAM::Role",
+            "Properties" : {
+                "AssumeRolePolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Principal" : {
+                                "Service" : [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action"    : [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path"                     : "/"
+            }
+        },
+        "EbsBackupSingaporePolicy" : {
+            "DependsOn" : [
+                "EbsBackupSingaporeRole"
+            ],
+            "Type"      : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "ebs-backup-Singapore-role",
+                "Roles"      : [
+                    {
+                        "Ref" : "EbsBackupSingaporeRole"
+                    }
+                ],
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "logs:*"
+                            ],
+                            "Resource" : [
+                                "arn:aws:logs:*:*:*"
+                            ]
+                        },
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "ec2:Describe*",
+                                "ec2:CreateSnapshot",
+                                "ec2:DeleteSnapshot",
+                                "ec2:CreateTags",
+                                "ec2:ModifySnapshotAttribute",
+                                "ec2:ResetSnapshotAttribute"
+                            ],
+                            "Resource" : [
+                                "*"
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "EbsBackupSingaporeFunction" : {
+            "Type" : "AWS::Lambda::Function",
+            "DependsOn" : [
+                "EbsBackupSingaporeRole",
+                "EbsBackupSingaporePolicy"
+            ],
+            "Properties" : {
+                "Code" : {
+                    "S3Bucket" : {
+                        "Ref" : "S3BucketName"
+                    },
+                    "S3Key"    : "ebs-backup-lambda.zip"
+                },
+                "Role" : {
+                    "Fn::GetAtt" : [
+                        "EbsBackupSingaporeRole",
+                        "Arn"
+                    ]
+                },
+                "Timeout" : 60,
+                "Handler" : "ebs_snapshot_function.lambda_handler",
+                "Runtime" : "python2.7",
+                "MemorySize" : 128
+            }
+        },
+        "EbsBackupJanitorSingaporeFunction" : {
+            "Type" : "AWS::Lambda::Function",
+            "DependsOn" : [
+                "EbsBackupSingaporeRole",
+                "EbsBackupSingaporePolicy"
+            ],
+            "Properties" : {
+                "Code" : {
+                    "S3Bucket" : {
+                        "Ref" : "S3BucketName"
+                    },
+                    "S3Key"    : "ebs-backup-lambda.zip"
+                },
+                "Role" : {
+                    "Fn::GetAtt" : [
+                        "EbsBackupSingaporeRole",
+                        "Arn"
+                    ]
+                },
+                "Timeout" : 60,
+                "Handler" : "janitor_function.lambda_handler",
+                "Runtime" : "python2.7",
+                "MemorySize" : 128
+            }
+        },
+        "EbsBackupSingaporeAlarm"           : {
+            "Type" : "AWS::CloudWatch::Alarm",
+            "Properties" : {
+                "AlarmName" : {
+                    "Fn::Join" : [
+                        "",
+                        [
+                            "EBS Backup Lambda Function Failure on Singapore Region",
+                            {
+                                "Ref" : "EbsBackupSingaporeFunction"
+                            }
+                        ]
+                    ]
+                },
+                "AlarmDescription" : {
+                    "Fn::Join" : [
+                        "",
+                        [
+                            "EBS Backup function is generating errors on Singapore Region. Backups may be failing "
+                        ]
+                    ]
+                },
+                "MetricName"       : "Errors",
+                "Namespace"        : "AWS/Lambda",
+                "Statistic"        : "Sum",
+                "Threshold"        : "1",
+				"Period"           : "300",
+				"EvaluationPeriods": "1",
+                "AlarmActions"     : [
+			{
+                                "Ref" : "SNSTopicNameCreate"
+                	}
+			],
+                "Dimensions"       : [
+                    {
+                        "Name" : "FunctionName",
+                        "Value" : {
+                            "Ref" : "EbsBackupSingaporeFunction"
+                        }
+                    }
+                ],
+                "ComparisonOperator" : "GreaterThanOrEqualToThreshold"
+            }
+        },
+        "EbsJanitorSingaporeAlarm"          : {
+            "Type" : "AWS::CloudWatch::Alarm",
+            "Properties" : {
+                "AlarmName" : {
+                    "Fn::Join" : [
+                        "",
+                        [
+                            "EBS Backup Lambda Function Failure on Singapore Region",
+                            {
+                                "Ref" : "EbsBackupJanitorSingaporeFunction"
+                            }
+                        ]
+                    ]
+                },
+                "AlarmDescription" : {
+                    "Fn::Join" : [
+                        "",
+                        [
+                            "EBS Backup function is generating errors on Singapore Region. Backups may be failing "
+                        ]
+                    ]
+                },
+                "MetricName"       : "Errors",
+                "Namespace"        : "AWS/Lambda",
+                "Statistic"        : "Sum",
+                "Threshold"        : "1",
+				"Period"           : "300",
+				"EvaluationPeriods": "1",
+                "AlarmActions"     : [
+			{
+                                "Ref" : "SNSTopicNameCreate"
+                	}
+		],
+                "Dimensions"       : [
+                    {
+                        "Name" : "FunctionName",
+                        "Value" : {
+                            "Ref" : "EbsBackupJanitorSingaporeFunction"
+                        }
+                    }
+                ],
+                "ComparisonOperator" : "GreaterThanOrEqualToThreshold"
+            }
+        }
+    }
+}

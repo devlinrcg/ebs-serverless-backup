@@ -1,0 +1,228 @@
+{
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description"              : "AWS CloudFormation Serverless EBS Maintenance on Frankfurt Region",
+    "Parameters"               : {
+        "SNSTopicName" : {
+            "Type" : "String",
+            "Description" : "SNS Topic to Send Alerts to",
+            "Default"     : "sns-topic-name"
+        },
+	"S3BucketName" : {
+	    "Type" : "String",
+            "Description" : "S3 Bucket Name (S3 Bucket where your Lambda Scripts are located)",
+            "Default"     : "s3-bucket-name"
+    }
+},
+    "Resources"                : {
+	"SNSTopicNameCreate" : {
+		"Type" : "AWS::SNS::Topic",
+		"Properties" : {
+		"TopicName" : {
+			"Ref" : "SNSTopicName"
+			}
+  		}
+	},
+        "EbsBackupFrankfurtRole" : {
+            "Type" : "AWS::IAM::Role",
+            "Properties" : {
+                "AssumeRolePolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Principal" : {
+                                "Service" : [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action"    : [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path"                     : "/"
+            }
+        },
+        "EbsBackupFrankfurtPolicy" : {
+            "DependsOn" : [
+                "EbsBackupFrankfurtRole"
+            ],
+            "Type"      : "AWS::IAM::Policy",
+            "Properties" : {
+                "PolicyName" : "ebs-backup-Frankfurt-role",
+                "Roles"      : [
+                    {
+                        "Ref" : "EbsBackupFrankfurtRole"
+                    }
+                ],
+                "PolicyDocument" : {
+                    "Version" : "2012-10-17",
+                    "Statement" : [
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "logs:*"
+                            ],
+                            "Resource" : [
+                                "arn:aws:logs:*:*:*"
+                            ]
+                        },
+                        {
+                            "Effect" : "Allow",
+                            "Action" : [
+                                "ec2:Describe*",
+                                "ec2:CreateSnapshot",
+                                "ec2:DeleteSnapshot",
+                                "ec2:CreateTags",
+                                "ec2:ModifySnapshotAttribute",
+                                "ec2:ResetSnapshotAttribute"
+                            ],
+                            "Resource" : [
+                                "*"
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "EbsBackupFrankfurtFunction" : {
+            "Type" : "AWS::Lambda::Function",
+            "DependsOn" : [
+                "EbsBackupFrankfurtRole",
+                "EbsBackupFrankfurtPolicy"
+            ],
+            "Properties" : {
+                "Code" : {
+                    "S3Bucket" : {
+                        "Ref" : "S3BucketName"
+                    },
+                    "S3Key"    : "ebs-backup-lambda.zip"
+                },
+                "Role" : {
+                    "Fn::GetAtt" : [
+                        "EbsBackupFrankfurtRole",
+                        "Arn"
+                    ]
+                },
+                "Timeout" : 60,
+                "Handler" : "ebs_snapshot_function.lambda_handler",
+                "Runtime" : "python2.7",
+                "MemorySize" : 128
+            }
+        },
+        "EbsBackupJanitorFrankfurtFunction" : {
+            "Type" : "AWS::Lambda::Function",
+            "DependsOn" : [
+                "EbsBackupFrankfurtRole",
+                "EbsBackupFrankfurtPolicy"
+            ],
+            "Properties" : {
+                "Code" : {
+                    "S3Bucket" : {
+                        "Ref" : "S3BucketName"
+                    },
+                    "S3Key"    : "ebs-backup-lambda.zip"
+                },
+                "Role" : {
+                    "Fn::GetAtt" : [
+                        "EbsBackupFrankfurtRole",
+                        "Arn"
+                    ]
+                },
+                "Timeout" : 60,
+                "Handler" : "janitor_function.lambda_handler",
+                "Runtime" : "python2.7",
+                "MemorySize" : 128
+            }
+        },
+        "EbsBackupFrankfurtAlarm"           : {
+            "Type" : "AWS::CloudWatch::Alarm",
+            "Properties" : {
+                "AlarmName" : {
+                    "Fn::Join" : [
+                        "",
+                        [
+                            "EBS Backup Lambda Function Failure on Frankfurt Region",
+                            {
+                                "Ref" : "EbsBackupFrankfurtFunction"
+                            }
+                        ]
+                    ]
+                },
+                "AlarmDescription" : {
+                    "Fn::Join" : [
+                        "",
+                        [
+                            "EBS Backup function is generating errors on Frankfurt Region. Backups may be failing "
+                        ]
+                    ]
+                },
+                "MetricName"       : "Errors",
+                "Namespace"        : "AWS/Lambda",
+                "Statistic"        : "Sum",
+                "Threshold"        : "1",
+				"Period"           : "300",
+				"EvaluationPeriods": "1",
+                "AlarmActions"     : [
+			{
+                                "Ref" : "SNSTopicNameCreate"
+                	}
+			],
+                "Dimensions"       : [
+                    {
+                        "Name" : "FunctionName",
+                        "Value" : {
+                            "Ref" : "EbsBackupFrankfurtFunction"
+                        }
+                    }
+                ],
+                "ComparisonOperator" : "GreaterThanOrEqualToThreshold"
+            }
+        },
+        "EbsJanitorFrankfurtAlarm"          : {
+            "Type" : "AWS::CloudWatch::Alarm",
+            "Properties" : {
+                "AlarmName" : {
+                    "Fn::Join" : [
+                        "",
+                        [
+                            "EBS Backup Lambda Function Failure on Frankfurt Region",
+                            {
+                                "Ref" : "EbsBackupJanitorFrankfurtFunction"
+                            }
+                        ]
+                    ]
+                },
+                "AlarmDescription" : {
+                    "Fn::Join" : [
+                        "",
+                        [
+                            "EBS Backup function is generating errors on Frankfurt Region. Backups may be failing "
+                        ]
+                    ]
+                },
+                "MetricName"       : "Errors",
+                "Namespace"        : "AWS/Lambda",
+                "Statistic"        : "Sum",
+                "Threshold"        : "1",
+				"Period"           : "300",
+				"EvaluationPeriods": "1",
+                "AlarmActions"     : [
+			{
+                                "Ref" : "SNSTopicNameCreate"
+                	}
+		],
+                "Dimensions"       : [
+                    {
+                        "Name" : "FunctionName",
+                        "Value" : {
+                            "Ref" : "EbsBackupJanitorFrankfurtFunction"
+                        }
+                    }
+                ],
+                "ComparisonOperator" : "GreaterThanOrEqualToThreshold"
+            }
+        }
+    }
+}
