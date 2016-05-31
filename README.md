@@ -1,60 +1,59 @@
-# Backup de Instâncias Amazon EC2 via EBS snapshot
-###### Funcionamento
-* Cada diretório neste repositório representa **UMA** Região AWS. Assim, os templates podem ser lançados em **QUALQUER** Região que tenha o AWS Lambda disponível (Virginia, por exemplo), e executar a função na região de sua escolha;
-* Cada diretório contém um template, 2 scripts e um script zip_all.sh;
-* Para cada edição feita nos scripts, você deve executar o zip_all.sh daquele diretório;
-* O template do AWS Cloudformation cria, automaticamente, a role e a policy para execução dos das funções no AWS Lambda;  
+# EBS Snapshot Backup for Amazon EC2 instances
+> Before you continue this, read the footnote on EBS Snapshots
 
-###### Uso
-* Acesse a console de sua conta AWS e vá até a console de gerenciamento do [Amazon S3](https://console.aws.amazon.com/s3/);
-* Crie um Bucket e clique para acessá-lo;
-* Faça o upload dos arquivos **ebs-backup-lambda.zip** e **ebs-backup-lambda.template** da Região de sua escolha para seu Bucket Amazon S3 criado no item anterior;
-* Copie o link do arquivo, ex: https://s3.amazonaws.com/SEU_BUCKET/ec2-startstop.template
-* Agora, vá até a console de gerenciamento do [AWS Cloudformation](https://console.aws.amazon.com/cloudformation/);
-* Clique em **Create Stack**;
-* No campo **Specify an Amazon S3 template URL**, cole/insira o link que você copiou do template, e clique em next;
-* Preencha os campos necessários: em nome do Bucket Amazon S3, coloque o nome do Bucket criado nos passos anteriores. Em tópico SNS, insira um nome para o tópico do AWS Push Notification Service, que será utilizado para receber alertas em caso de erro na execução dos scripts;
-* Vá passando pelas opções até lançar o Stack;
-* Assim que lançado, os recursos serão criados automaticamente;
-* Após terminado o processo, vá até a console de gerenciamento do AWS SNS e se inscreva no tópico criado, para receber os alertas;
-* Repita estes passos para outras funções de Regiões diferentes;
+###### How it works
+* Each directory in this repository represents **ONE** AWS Region. This means that templates can be launched in **ANY** AWS Region with AWS Lambda available;
+    * As an example: if you have your Amazon EC2 instances on the SaoPaulo Region, you will have to launch the stack, let's say, on Virginia's Region (which will have the AWS Lambda availability), using the directory/template from SaoPaulo;
+* Every time you edit a script, you must execute the zip_all.sh on that directory;
+* The AWS Cloudformation template creates, automatically, a role and policy for your AWS Lambda Functions;  
 
-##### Agendamento:
-Para agendamento da função no horário que quiser, após lançar os Stacks desejados, coloque um Event Source em cada Função AWS Lambda, conforme abaixo:
-* Acesse a console de gerenciamento do [AWS Lambda](https://console.aws.amazon.com/lambda);
-* Clique na função desejada;
-* Clique na aba **Event sources**;
-* Clique em **Add event source**;
-* Nesta tela, preencha:
-    * Event source type: **Cloudwatch Events - Schedule**;
-    * Rule name: um nome para a regra, que você possa lembrar;
-    * Rule description: uma descrição para regra;
-    * Schedule expression: siga os exemplos de  expressão abaixo.
-    * Clique em **Submit** e pronto, está agendado;
-    * Repita estes passos para as outras funções;  
+###### Usage
+* Go to [Amazon S3](https://console.aws.amazon.com/s3/);
+* Create a Bucket and click on it;
+* Upload the files **ebs-backup-lambda.zip** and **ebs-backup-lambda.template** from the directory representing the AWS Region where you want to execute the Functions;
+* Click on the **ebs-backup-lambda.template**, and then on **Properties**;
+* Copy the link presented to you, e.g.: https://s3.amazonaws.com/YOUR_BUCKET/ec2-startstop.template
+* Now, go to [AWS Cloudformation](https://console.aws.amazon.com/cloudformation/);
+* click on **Create Stack**;
+    * In **Specify an Amazon S3 template URL**,  insert the link for your template (copied before), and click next;
+    * Put the information needed: in **S3BucketName**, put the name of your Bucket, created earlier;
+    * In **SNSTopicName**, insert a name for an AWS Push Notification Service topic to be created, which will be used to alert you in case of any error/alert on the Function execution;
+    * Next, Next, Create;
+    * When launched, resources will be created automatically;
+    * After everything is created, go to the Management Console for AWS Push Notification Service and subscribe to the created topic, so you can receive alerts;
+* Repeat these steps for different AWS Regions;
+* To schedule these Functions to be executed at a time/date/rate of your choice, after launching the Stacks, insert an **Event Source** in each AWS Lambda Function, as informed below:
+    * Go to [AWS Lambda](https://console.aws.amazon.com/lambda);
+    * Click on the Function you want to schedule an event;
+    * Click on the **Event sources** tab;
+    * Click on **Add event source**;
+    * On this screen:
+      * Event source type: **Cloudwatch Events - Schedule**;
+      * Rule name: a name for your rule;
+      * Rule description: a description for your rule;
+      * Schedule expression: follow the expressions below;
+      * **Submit** and done;
+      * Repeat these steps for each Function;
 
-Obs: como referência, coloque horários diferentes do Backup e do Janitor, para que não coincidam;  
+###### Expressions - Schedule an Event
+Same as cron (Linux), following the UTC (+3BRT) timezone. Some examples:
 
-###### Exemplos de Expressões para agendamento
-As expressões são do cron (Linux), e seguem a hora UTC (+3BRT). Abaixo seguem alguns exemplos:
-
-* Executado às 17:00 (BRT) de segunda à sexta:
+* Executed at 17:00 (BRT) from monday until friday:
 ```
-cron(0 20 ? * MON-FRI * )
+      cron(0 20 ? * MON-FRI * )
 ```
-* Executado às 08:00 (BRT) de segunda à sexta:
+* Executed at 8:00 (BRT) from monday until friday:
 ```
-cron(0 11 ? * MON-FRI * )
+      cron(0 11 ? * MON-FRI * )
 ```  
 
-##### Para que Backup seja feito:
-- Em cada instância EC2 que você precisa do Backup, coloque a Tag "Backup" ou "backup" (sem aspas); não precisa colocar nenhum valor na Tag.
-- Em cada instância EC2 que você precisa de uma retenção, coloque a Tag "Retention" ou "retention" (sem as aspas), com o valor em DIAS (ex: para retenção de 7 dias, coloque 7); você pode colocar múltiplas retenções.
-	- Caso não seja inserida a tag Retention com a quantidade de dias a fazer a retenção, serão considerados 7 dias.
+##### For EBS to be backed up as a Snapshot:
+* In each Amazon EC2 instance that you need the Snapshot Backup, insert the Tag **Backup** or **backup**; don't need any Value on these Tags;
+* In each Amazon EC2 instance that you need a retention, insert the Tag **Retention** or **retention**, with Value in **DAYS** (e.g.: for a 7 days retention, put 7 on the Tag Value);  
 
-##### Estrutura dos Dados:
+**TAGS ARE CASE-SENSITIVE!!!**
 
-###### Arquivos
+###### File
 ```
 ebs-serverless-backup
 ├── California
@@ -119,3 +118,4 @@ ebs-serverless-backup
     ├── janitor_function.py
     └── zip_all.sh
 ```
+> Note on EBS Snapshots: for high/intensive I/O (Write/Read) volumes, its recommended the STOP/Freeze this I/O (or the STOP for this Amazon EC2 instance) before executing the EBS Snapshot. This script **WILL NOT** STOP/Freeze your instance.
